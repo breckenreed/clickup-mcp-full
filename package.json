@@ -1,0 +1,38 @@
+{
+  "name": "clickup-mcp-full",
+  "version": "1.0.0",
+  "description": "ClickUp MCP server with a one-call nested subtask tree. Wraps @twofeetup/clickup-mcp and adds get_task_tree.",
+  "type": "module",
+  "bin": {
+    "clickup-mcp-full": "src/index.mjs"
+  },
+  "main": "src/index.mjs",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@twofeetup/clickup-mcp": "^1.7.0"
+  },
+  "keywords": [
+    "clickup",
+    "mcp",
+    "model-context-protocol",
+    "subtasks",
+    "task-management",
+    "ai-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/breckenreed/clickup-mcp-full.git"
+  },
+  "bugs": {
+    "url": "https://github.com/breckenreed/clickup-mcp-full/issues"
+  },
+  "homepage": "https://github.com/breckenreed/clickup-mcp-full#readme",
+  "license": "MIT"
+}
