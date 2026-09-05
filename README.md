@@ -1,13 +1,15 @@
 # clickup-mcp-full
 
-A ClickUp MCP server that can read a whole nested subtask tree in **one call**.
+A ClickUp MCP server that can read a whole nested subtask tree — or a task's
+whole activity history — in **one call**.
 
 It wraps [`@twofeetup/clickup-mcp`](https://www.npmjs.com/package/@twofeetup/clickup-mcp)
 rather than forking it, so upstream fixes arrive with a dependency bump. On top
-of that server it adds `get_task_tree`, rewrites one tool description that
-reliably misleads smaller models, and pins a sensible default tool set.
+of that server it adds `get_task_tree` and `get_task_activity`, rewrites one
+tool description that reliably misleads smaller models, and pins a sensible
+default tool set.
 
-## Why
+## Why the subtask tree
 
 Upstream's only route to subtasks is `search_tasks` with `include_subtasks`,
 which calls `GET /task/{id}?subtasks=true` and returns **full task objects for
@@ -32,6 +34,38 @@ List: Q3 Delivery
     86captm8  [open]  Backfill historical rows
   86captk3  [open]  Cutover plan
 ```
+
+## Why the activity log
+
+Upstream's `task_comments` reads comments and nothing else, so "who moved this
+deadline", "when did it go to in progress", "who added that tag" are simply
+unanswerable — those events live in ClickUp's **task history**, which the
+documented v2 API does not expose at any endpoint.
+
+`get_task_activity` reads the history the ClickUp web app itself reads
+(`GET /v1/task/{id}/history`), merges it with the comments, de-duplicates the
+comments that appear in both, and renders one chronological log: every status
+change, due and start date move, assignee, watcher, tag, priority, name and
+description edit, custom field, list or folder move, attachment, checklist,
+time estimate and task relationship, with who did it and when.
+
+```
+Activity for 86capt3b (DEV-12): Migrate billing service
+7 event(s).
+Kinds: Comment: 2, Due date: 1, Tags: 1, Assignee added: 1, Status: 1, Custom field: 1
+
+2026-03-06 12:00  ivan  —  Cutover moved to next week.
+2026-03-05 09:00  ivan  —  Due date: 2026-03-10 12:00 → 2026-03-24 12:00
+2026-03-04 15:30  olena  —  Tags: blocked, billing
+2026-03-04 11:05  olena  —  Assignee added: ivan
+2026-03-03 08:00  ivan  —  Status: to do → in progress
+2026-03-02 17:45  olena  —  Schema audit done, moving on.
+2026-03-01 10:00  ivan  —  Custom field "Sprint": S-14
+```
+
+Narrow it with `fields` (raw ClickUp field names: `status`, `due_date`,
+`assignee_add`, `tag`, `custom_field`, ...), `since` (ISO date or millisecond
+timestamp), `limit`, `include_comments` and `oldest_first`. Timestamps are UTC.
 
 ## Install
 
@@ -104,11 +138,12 @@ relying on tool selection.
 | Tool | Access | What it does |
 |---|---|---|
 | `get_task_tree` | read | Task plus all nested subtasks, any depth, one call |
+| `get_task_activity` | read | Full history of a task: system events plus comments |
 | `get_workspace_hierarchy` | read | Spaces, folders, lists as a tree |
 | `search_tasks` | read | One task by id, one list, or workspace-wide filters |
 | `get_container` | read | Details of a single list or folder |
 | `find_members` | read | Resolve a name or email to an assignee id |
-| `task_comments` | read, write | Get and add comments |
+| `task_comments` | read, write | Get and add comments (use `get_task_activity` to read) |
 | `manage_task` | write | Create, update, delete, move, duplicate |
 | `manage_container` | write | Create, update, delete lists and folders |
 | `operate_tags` | read, write | List, create, update, delete tags |
@@ -127,7 +162,7 @@ ENABLED_TOOLS=get_workspace_hierarchy,search_tasks,manage_task,task_comments,get
 
 | Variable | Default | Effect |
 |---|---|---|
-| `ENABLED_TOOLS` | the nine above | Comma-separated allowlist. Overrides the default set. `get_task_tree` is always available. |
+| `ENABLED_TOOLS` | the nine upstream tools above | Comma-separated allowlist. Overrides the default set. `get_task_tree` and `get_task_activity` are implemented here, so they are always available. |
 | `DISABLED_TOOLS` | unset | Comma-separated blocklist. Ignored when `ENABLED_TOOLS` is set. |
 | `REQUEST_SPACING` | `100` | Milliseconds between ClickUp API calls. See below. |
 | `DOCUMENT_SUPPORT` | `false` | `true` exposes upstream's document tools. |
@@ -145,6 +180,14 @@ contains the root task. If your workspace places subtasks in a different list
 from their parent, those will not appear, and the server falls back to the
 direct children reported by the task endpoint. Open an issue if you hit this
 and it matters.
+
+**The activity endpoint is undocumented.** `GET /v1/task/{id}/history` is what
+the ClickUp web app calls, not part of the published v2 API: a personal token
+can read it today, but ClickUp does not promise that, and some plans or tokens
+get a 403. That failure is not fatal — `get_task_activity` then returns the
+comments plus a line saying the system events were unavailable, so the tool
+never simply breaks. It pages up to ten pages of history and ten of comments,
+spaced by `REQUEST_SPACING`.
 
 **`search_tasks` descriptions.** The upstream description ("Works 3 ways")
 leads smaller models to put a plain id like `86capt3b` into `customTaskId`,
