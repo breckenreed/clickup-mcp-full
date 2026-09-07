@@ -135,6 +135,30 @@ created it and inherits that user's permissions, so if you want an agent that
 cannot write, create the token under a view-only ClickUp account rather than
 relying on tool selection.
 
+### Where the token goes
+
+The token is a full-workspace credential, so this server is deliberately narrow
+about where it can travel:
+
+- **One origin.** Every request the native tools make is built as a `URL` and
+  checked against `https://api.clickup.com` before the `Authorization` header
+  is attached. A request to any other origin throws instead of being sent.
+- **Read-only native path.** `get_task_tree` and `get_task_activity` share a
+  single helper with the method hardcoded to `GET`; callers pass a path, never
+  a method or a host.
+- **A trimmed child environment.** The upstream server runs as a child process
+  and receives only the variables it reads (`CLICKUP_*`, the tool selection,
+  `REQUEST_SPACING`, `LOG_LEVEL`, `DOCUMENT_*`) plus what Node needs to start —
+  not your editor's whole environment, and not `NODE_OPTIONS`.
+- **A fixed child.** The spawned server is resolved from the installed
+  `@twofeetup/clickup-mcp`. `CLICKUP_MCP_ENTRY` can only point inside that
+  package, so no environment variable can redirect the credential into other
+  code.
+- **No listening socket.** `ENABLE_SSE` is forced off and `ENABLE_STDIO` on,
+  whatever the environment says, so the server is reachable only over the stdio
+  pipe of the process that launched it.
+- **No file uploads by default.** See `attach_file_to_task` below.
+
 ## Tools
 
 | Tool | Access | What it does |
