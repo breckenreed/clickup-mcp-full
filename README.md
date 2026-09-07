@@ -3,7 +3,7 @@
 A ClickUp MCP server that can read a whole nested subtask tree — or a task's
 whole activity history — in **one call**.
 
-[![M8ven Score](https://m8ven.ai/badge/mcp/breckenreed-clickup-mcp-full-qfvqac)](https://m8ven.ai/mcp/breckenreed-clickup-mcp-full-qfvqac)
+[![M8ven Verified](https://m8ven.ai/api/agent-verify/badge?score=98)](https://m8ven.ai/verified/verify?id=30c92e6b761a0b05)
 
 It wraps [`@twofeetup/clickup-mcp`](https://www.npmjs.com/package/@twofeetup/clickup-mcp)
 rather than forking it, so upstream fixes arrive with a dependency bump. On top
