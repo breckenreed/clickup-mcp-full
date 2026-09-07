@@ -21,8 +21,9 @@ account if the agent should not be able to write.
 
 - The token is sent only to `https://api.clickup.com`. Requests are constructed
   as `URL` objects and the origin is compared to that constant *before* the
-  `Authorization` header is attached; anything else throws
-  (`src/index.mjs`, `clickupGet`).
+  `Authorization` header is attached; anything else throws. The host is then
+  written out literally in the `fetch` call itself, so the destination is
+  readable without following a variable (`src/index.mjs`, `clickupGet`).
 - The native tools (`get_task_tree`, `get_task_activity`) issue `GET` only. The
   method is hardcoded in the one helper they share.
 - The child process (`@twofeetup/clickup-mcp`) is resolved from this package's
@@ -53,6 +54,14 @@ The write tools that *are* enabled (`manage_task`, `manage_container`,
 permissions. An agent reading task descriptions is reading untrusted text; run
 it with per-action confirmation, a view-only token, or a reduced `ENABLED_TOOLS`
 list if that matters for your workspace.
+
+## Verifying this yourself
+
+`npm test` runs the whole suite on the standard library alone — no network, no
+ClickUp workspace. `test/server.test.mjs` spawns the server as a host would and
+asserts the refusals directly: missing credentials stop it, an entry override
+pointing outside the installed package is refused, and JSON-RPC batches are
+rejected rather than forwarded.
 
 ## Supported versions
 

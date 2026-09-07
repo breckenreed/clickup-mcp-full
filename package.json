@@ -10,8 +10,12 @@
   "files": [
     "src",
     "README.md",
+    "SECURITY.md",
     "LICENSE"
   ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "engines": {
     "node": ">=18"
   },
