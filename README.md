@@ -3,7 +3,7 @@
 A ClickUp MCP server that can read a whole nested subtask tree — or a task's
 whole activity history — in **one call**.
 
-[![M8ven Verified](https://m8ven.ai/api/agent-verify/badge?score=98)](https://m8ven.ai/verified/verify?id=30c92e6b761a0b05)
+[![M8ven Trust Score](https://m8ven.ai/badge/mcp/breckenreed-clickup-mcp-full-qfvqac)](https://m8ven.ai/mcp/breckenreed-clickup-mcp-full-qfvqac)
 
 It wraps [`@twofeetup/clickup-mcp`](https://www.npmjs.com/package/@twofeetup/clickup-mcp)
 rather than forking it, so upstream fixes arrive with a dependency bump. On top
@@ -135,30 +135,6 @@ created it and inherits that user's permissions, so if you want an agent that
 cannot write, create the token under a view-only ClickUp account rather than
 relying on tool selection.
 
-### Where the token goes
-
-The token is a full-workspace credential, so this server is deliberately narrow
-about where it can travel:
-
-- **One origin.** Every request the native tools make is built as a `URL` and
-  checked against `https://api.clickup.com` before the `Authorization` header
-  is attached. A request to any other origin throws instead of being sent.
-- **Read-only native path.** `get_task_tree` and `get_task_activity` share a
-  single helper with the method hardcoded to `GET`; callers pass a path, never
-  a method or a host.
-- **A trimmed child environment.** The upstream server runs as a child process
-  and receives only the variables it reads (`CLICKUP_*`, the tool selection,
-  `REQUEST_SPACING`, `LOG_LEVEL`, `DOCUMENT_*`) plus what Node needs to start —
-  not your editor's whole environment, and not `NODE_OPTIONS`.
-- **A fixed child.** The spawned server is resolved from the installed
-  `@twofeetup/clickup-mcp`. `CLICKUP_MCP_ENTRY` can only point inside that
-  package, so no environment variable can redirect the credential into other
-  code.
-- **No listening socket.** `ENABLE_SSE` is forced off and `ENABLE_STDIO` on,
-  whatever the environment says, so the server is reachable only over the stdio
-  pipe of the process that launched it.
-- **No file uploads by default.** See `attach_file_to_task` below.
-
 ## Tools
 
 | Tool | Access | What it does |
@@ -192,12 +168,38 @@ ENABLED_TOOLS=get_workspace_hierarchy,search_tasks,manage_task,task_comments,get
 | `DISABLED_TOOLS` | unset | Comma-separated blocklist. Ignored when `ENABLED_TOOLS` is set. |
 | `REQUEST_SPACING` | `100` | Milliseconds between ClickUp API calls. See below. |
 | `DOCUMENT_SUPPORT` | `false` | `true` exposes upstream's document tools. |
+| `CLICKUP_MCP_ENTRY` | unset | Path to the wrapped server, for unusual install layouts. It may only point inside the installed `@twofeetup/clickup-mcp`. |
 
 **Raise `REQUEST_SPACING` on a shared workspace.** The default allows about ten
 requests per second, while ClickUp's per-token limit is roughly 100 per minute
 on most plans. The limit is counted against the token, not the tool, so an
 agent that exhausts it also breaks every other integration running under the
 same token. `700` keeps you under a 100 per minute ceiling.
+
+## Where the token goes
+
+The token is a full-workspace credential, so this server is deliberately narrow
+about where it can travel. All of it is asserted by the tests in `test/`.
+
+- **One origin.** Native requests are built as a `URL`, compared against
+  `https://api.clickup.com`, and only then sent — with the host written out
+  literally in the `fetch` call. A request anywhere else throws before the
+  `Authorization` header exists.
+- **Read-only native path.** Both native tools share one helper with the method
+  hardcoded to GET. Callers pass a path, never a method or a host.
+- **A trimmed child environment.** The wrapped server is a child process and
+  receives only the variables it reads, plus what Node needs to start — not the
+  whole environment of the editor that launched this one, and never
+  `NODE_OPTIONS`.
+- **A fixed child.** It is resolved from the installed dependency, and the entry
+  override may only point inside that package, so no environment variable can
+  redirect the credential into other code.
+- **No listening socket.** SSE is forced off and stdio on, whatever the
+  environment says, so the server is reachable only through the pipe of the
+  process that launched it.
+- **No file uploads by default.** See `attach_file_to_task` above.
+
+`SECURITY.md` has the detail, including how to report a problem.
 
 ## Notes on behaviour
 
@@ -251,6 +253,21 @@ most clients require them in the server's own `env` block, not your shell.
 
 A 401 from any tool means the token is wrong or was revoked. A 429 means you
 are hitting the rate limit, so raise `REQUEST_SPACING`.
+
+## Development
+
+There is nothing to build. The tests run on the standard library alone:
+
+```bash
+npm test
+```
+
+`test/format.test.mjs` and `test/tools.test.mjs` cover the tree assembly, the
+activity rendering, the tool annotations and the argument normalisation as
+plain functions. `test/server.test.mjs` spawns the server the way a host does
+and drives it over stdio: the handshake, the tool list, the refusals, and the
+guard on the entry override. None of them touch the network or need a ClickUp
+workspace.
 
 ## License
 
