@@ -4,7 +4,7 @@
  *
  * This is a thin stdio proxy in front of @twofeetup/clickup-mcp rather than a
  * fork of it. It spawns that server as a child, speaks the same newline-
- * delimited JSON-RPC in both directions, and changes exactly four things:
+ * delimited JSON-RPC in both directions, and changes exactly five things:
  *
  *   1. adds `get_task_tree`, implemented here, which reads a task and ALL of
  *      its nested subtasks at every depth in one call;
@@ -12,9 +12,12 @@
  *      every system event (status changes, due-date moves, assignees, tags,
  *      priority, custom fields, moves, attachments, ...) merged with the
  *      comments, in one chronological view;
- *   3. rewrites the `search_tasks` description, whose "Works 3 ways" phrasing
- *      reliably walks smaller models into a dead end (see below);
- *   4. defaults the exposed tool set to the nine documented in the README,
+ *   3. adds `get_task`, one task as a compact card with its full markdown
+ *      description, and `get_list_statuses`, the statuses a list allows;
+ *   4. rewrites the `search_tasks` description, whose "Works 3 ways" phrasing
+ *      reliably walks smaller models into a dead end (see below), and appends
+ *      warnings to the write tools whose failure modes are silent;
+ *   5. defaults the exposed tool set to the nine documented in the README,
  *      unless you set ENABLED_TOOLS / DISABLED_TOOLS yourself.
  *
  * Tool definitions and the pure rendering helpers live in tools.mjs and
@@ -93,6 +96,8 @@ import {
   indexByParent,
   normaliseHistoryEntry,
   parseSince,
+  renderStatuses,
+  renderTaskCard,
   renderTree,
 } from './format.mjs';
 import {
@@ -104,7 +109,7 @@ import {
 } from './tools.mjs';
 
 const require = createRequire(import.meta.url);
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   process.stderr.write(
@@ -498,7 +503,59 @@ async function getTaskActivity(args) {
   return `${header}\n${lines.join('\n') || '(no matching events)'}`;
 }
 
+// ── get_task / get_list_statuses ───────────────────────────────────────────
+
+// A prefixed id ("DEV-123") only resolves with custom_task_ids + team_id; a
+// plain id must not carry them, or ClickUp looks it up as a custom id and 404s.
+const CUSTOM_ID = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+
+async function getTask(args) {
+  const taskId = String(args?.taskId || '').trim();
+  if (!taskId) throw new Error('taskId is required');
+  const includeStatuses = args?.include_list_statuses !== false;
+
+  const query = new URLSearchParams({
+    include_markdown_description: 'true',
+    include_subtasks: 'true',
+  });
+  if (CUSTOM_ID.test(taskId)) {
+    query.set('custom_task_ids', 'true');
+    query.set('team_id', String(process.env.CLICKUP_TEAM_ID || '').trim());
+  }
+  const task = await clickupGet(`/task/${encodeURIComponent(taskId)}?${query}`);
+
+  // The statuses are a convenience: a failure there must not cost the task.
+  let statuses = null;
+  if (includeStatuses && task.list?.id) {
+    try {
+      await spaceRequests();
+      statuses = (await clickupGet(`/list/${encodeURIComponent(task.list.id)}`)).statuses;
+    } catch (err) {
+      log(`list statuses failed for ${task.list.id}: ${err.message}`);
+    }
+  }
+  return renderTaskCard(task, { statuses });
+}
+
+async function getListStatuses(args) {
+  const listId = String(args?.listId || '').trim();
+  if (!listId) throw new Error('listId is required');
+
+  const list = await clickupGet(`/list/${encodeURIComponent(listId)}`);
+  const lines = renderStatuses(list.statuses);
+  const inherited = list.override_statuses === false
+    ? 'Inherited from the folder or space (the list does not override them).\n'
+    : '';
+  return (
+    `Statuses for list ${list.name || listId} (${list.id || listId}): ${lines.length}\n` +
+    inherited +
+    `\n${lines.join('\n') || '(none returned)'}`
+  );
+}
+
 const NATIVE_HANDLERS = {
+  get_task: getTask,
+  get_list_statuses: getListStatuses,
   get_task_tree: getTaskTree,
   get_task_activity: getTaskActivity,
 };

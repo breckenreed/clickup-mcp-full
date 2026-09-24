@@ -1,15 +1,16 @@
 # clickup-mcp-full
 
-A ClickUp MCP server that can read a whole nested subtask tree — or a task's
-whole activity history — in **one call**.
+A ClickUp MCP server that can read a whole nested subtask tree, a task's whole
+activity history, or one task in full, in **one call**.
 
 [![M8ven Trust Score](https://m8ven.ai/badge/mcp/breckenreed-clickup-mcp-full-qfvqac)](https://m8ven.ai/mcp/breckenreed-clickup-mcp-full-qfvqac)
 
 It wraps [`@twofeetup/clickup-mcp`](https://www.npmjs.com/package/@twofeetup/clickup-mcp)
 rather than forking it, so upstream fixes arrive with a dependency bump. On top
-of that server it adds `get_task_tree` and `get_task_activity`, rewrites one
-tool description that reliably misleads smaller models, and pins a sensible
-default tool set.
+of that server it adds `get_task_tree`, `get_task_activity`, `get_task` and
+`get_list_statuses`, rewrites one tool description that reliably misleads
+smaller models, warns on the write tools whose failures are silent, and pins a
+sensible default tool set.
 
 ## Why the subtask tree
 
@@ -68,6 +69,48 @@ Kinds: Comment: 2, Due date: 1, Tags: 1, Assignee added: 1, Status: 1, Custom fi
 Narrow it with `fields` (raw ClickUp field names: `status`, `due_date`,
 `assignee_add`, `tag`, `custom_field`, ...), `since` (ISO date or millisecond
 timestamp), `limit`, `include_comments` and `oldest_first`. Timestamps are UTC.
+
+## Why the full-task read
+
+Upstream reads one task through `search_tasks` with `detail_level: "detailed"`,
+which returns the raw ClickUp object: the description twice (plain and rich),
+every custom field whether it is set or not, drop-down values as bare numbers,
+avatar URLs, sharing settings. The answer to "what does this task say" is in
+there, but an agent pays for all of the rest in context.
+
+`get_task` returns the same task as a card: the fields an agent reads before
+acting on a task, set custom fields only, option values resolved to their
+names, checklists with their items, dependencies in both directions, the
+statuses its list allows, and the full description as markdown, last.
+
+```
+Task 86capt3b (DEV-12): Migrate billing service
+URL: https://app.clickup.com/t/86capt3b
+Status: in progress   Priority: high
+List: Q3 Delivery (900100)   Folder: Platform
+Subtasks: 3 direct (get_task_tree for all levels)
+Assignees: ivan
+Created: 2026-03-01 10:00 by olena   Updated: 2026-03-06 12:00
+Start: 2026-03-02 09:00   Due: 2026-03-24 12:00
+Time estimate: 4h   Time tracked: 1h 30m
+Tags: billing
+Custom fields:
+  Stage: Build
+Checklist "Cutover" (1/2):
+  [x] Freeze writes
+  [ ] Switch DNS
+Waiting on: 86captk9
+Statuses in this list: to do (open), in progress (custom), complete (closed)
+
+Description:
+## Goal
+
+Move billing off the monolith.
+```
+
+Status names are per list and must match exactly when setting or filtering by
+them, and upstream's `get_container` does not return them, so
+`get_list_statuses` does, in board order and with their type.
 
 ## Install
 
@@ -139,6 +182,8 @@ relying on tool selection.
 
 | Tool | Access | What it does |
 |---|---|---|
+| `get_task` | read | One task in full: description, fields, checklists, list statuses |
+| `get_list_statuses` | read | Every status a list allows, in board order |
 | `get_task_tree` | read | Task plus all nested subtasks, any depth, one call |
 | `get_task_activity` | read | Full history of a task: system events plus comments |
 | `get_workspace_hierarchy` | read | Spaces, folders, lists as a tree |
@@ -164,7 +209,7 @@ ENABLED_TOOLS=get_workspace_hierarchy,search_tasks,manage_task,task_comments,get
 
 | Variable | Default | Effect |
 |---|---|---|
-| `ENABLED_TOOLS` | the nine upstream tools above | Comma-separated allowlist. Overrides the default set. `get_task_tree` and `get_task_activity` are implemented here, so they are always available. |
+| `ENABLED_TOOLS` | the nine upstream tools above | Comma-separated allowlist. Overrides the default set. The four native tools (`get_task`, `get_list_statuses`, `get_task_tree`, `get_task_activity`) are implemented here, so they are always available. |
 | `DISABLED_TOOLS` | unset | Comma-separated blocklist. Ignored when `ENABLED_TOOLS` is set. |
 | `REQUEST_SPACING` | `100` | Milliseconds between ClickUp API calls. See below. |
 | `DOCUMENT_SUPPORT` | `false` | `true` exposes upstream's document tools. |
@@ -185,7 +230,7 @@ about where it can travel. All of it is asserted by the tests in `test/`.
   `https://api.clickup.com`, and only then sent — with the host written out
   literally in the `fetch` call. A request anywhere else throws before the
   `Authorization` header exists.
-- **Read-only native path.** Both native tools share one helper with the method
+- **Read-only native path.** All four native tools share one helper with the method
   hardcoded to GET. Callers pass a path, never a method or a host.
 - **A trimmed child environment.** The wrapped server is a child process and
   receives only the variables it reads, plus what Node needs to start — not the
@@ -209,8 +254,9 @@ from their parent, those will not appear, and the server falls back to the
 direct children reported by the task endpoint. Open an issue if you hit this
 and it matters.
 
-**Argument spellings are forgiving.** The two native tools accept `task_id`,
-`taskid`, a bare `id` or `task` wherever the schema says `taskId`, and the same
+**Argument spellings are forgiving.** The native tools accept `task_id`,
+`taskid`, a bare `id` or `task` wherever the schema says `taskId` (and `list_id`,
+`list` or a bare `id` for `get_list_statuses`), and the same
 folding applies to every other argument (`maxDepth` for `max_depth`,
 `includeComments` for `include_comments`). Values are coerced to the declared
 type, so `"true"`, `"15"` and `"status,due_date"` work where a boolean, a number
@@ -234,6 +280,14 @@ workspace-search branch and fails with "At least one filter parameter is
 required", an error that names the wrong problem, after which the model tends
 to invent filters instead of fixing the field. This server replaces that
 description with the single rule the model actually needs.
+
+**Warnings on the write tools.** Two upstream behaviours fail silently, so
+their descriptions carry a note. `manage_task` with `description` or
+`markdown_description` replaces the whole description rather than appending to
+it, so the note says to read it with `get_task` first. And `parent` is honoured
+only on create: an update that sets it reports success and changes nothing,
+and `move` changes the list only, so an existing task cannot be re-parented
+through this server.
 
 **Running inside Docker with a bind-mounted home.** If your agent launches MCP
 servers with `HOME` pointing at a bind mount, `npx` rebuilds its package cache
@@ -263,7 +317,8 @@ npm test
 ```
 
 `test/format.test.mjs` and `test/tools.test.mjs` cover the tree assembly, the
-activity rendering, the tool annotations and the argument normalisation as
+activity rendering, the task card and custom-field resolution, the tool
+annotations and the argument normalisation as
 plain functions. `test/server.test.mjs` spawns the server the way a host does
 and drives it over stdio: the handshake, the tool list, the refusals, and the
 guard on the entry override. None of them touch the network or need a ClickUp

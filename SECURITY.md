@@ -24,7 +24,8 @@ account if the agent should not be able to write.
   `Authorization` header is attached; anything else throws. The host is then
   written out literally in the `fetch` call itself, so the destination is
   readable without following a variable (`src/index.mjs`, `clickupGet`).
-- The native tools (`get_task_tree`, `get_task_activity`) issue `GET` only. The
+- The native tools (`get_task`, `get_list_statuses`, `get_task_tree`,
+  `get_task_activity`) issue `GET` only. The
   method is hardcoded in the one helper they share.
 - The child process (`@twofeetup/clickup-mcp`) is resolved from this package's
   own dependency. `CLICKUP_MCP_ENTRY` is honoured only when it resolves inside
