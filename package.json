@@ -1,7 +1,7 @@
 {
   "name": "clickup-mcp-full",
-  "version": "1.0.0",
-  "description": "ClickUp MCP server with a one-call nested subtask tree. Wraps @twofeetup/clickup-mcp and adds get_task_tree.",
+  "version": "1.1.0",
+  "description": "ClickUp MCP server with a one-call nested subtask tree, full task activity and a compact full-task read. Wraps @twofeetup/clickup-mcp.",
   "type": "module",
   "bin": {
     "clickup-mcp-full": "src/index.mjs"

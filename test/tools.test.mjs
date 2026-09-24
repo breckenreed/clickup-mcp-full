@@ -19,7 +19,10 @@ test('every native tool declares a name, a description and a schema', () => {
     assert.ok(tool.name, 'tool has a name');
     assert.ok(tool.description.length > 40, `${tool.name} describes itself`);
     assert.equal(tool.inputSchema.type, 'object');
-    assert.deepEqual(tool.inputSchema.required, ['taskId']);
+    assert.equal(tool.inputSchema.required.length, 1, `${tool.name} needs one id`);
+    for (const name of tool.inputSchema.required) {
+      assert.ok(name in tool.inputSchema.properties, `${tool.name} declares ${name}`);
+    }
   }
 });
 
@@ -101,6 +104,27 @@ test('normaliseArgs accepts the spellings a small model reaches for', () => {
 test('normaliseArgs reads a bare id or task as the task id', () => {
   assert.equal(normaliseArgs('get_task_tree', { id: 'abc' }).args.taskId, 'abc');
   assert.equal(normaliseArgs('get_task_activity', { task: 'abc' }).args.taskId, 'abc');
+  assert.equal(normaliseArgs('get_task', { task_id: 'abc' }).args.taskId, 'abc');
+});
+
+test('normaliseArgs reads a bare id as whichever id the tool declares', () => {
+  const { args } = normaliseArgs('get_list_statuses', { id: '900100' });
+
+  assert.equal(args.listId, '900100');
+  assert.equal(args.taskId, undefined);
+  assert.equal(normaliseArgs('get_list_statuses', { list_id: '9' }).args.listId, '9');
+});
+
+test('the write tools carry the warnings their silent failures need', () => {
+  const [manage, container] = decorateChildTools([
+    { name: 'manage_task', description: 'Upstream text.' },
+    { name: 'get_container', description: 'Upstream text.' },
+  ]);
+
+  assert.ok(manage.description.startsWith('Upstream text.'));
+  assert.match(manage.description, /REPLACE the whole description/);
+  assert.match(manage.description, /`parent` is honoured only by create/);
+  assert.match(container.description, /get_list_statuses/);
 });
 
 test('normaliseArgs keeps the spelling that carries a value', () => {

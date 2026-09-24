@@ -82,8 +82,10 @@ test('tools/list returns the documented set, native tools included', async () =>
   const { replies } = await shared();
   const names = replies.find((r) => r.id === 2).result.tools.map((t) => t.name);
 
-  assert.equal(names.length, 11);
+  assert.equal(names.length, 13);
   for (const expected of [
+    'get_task',
+    'get_list_statuses',
     'get_task_tree',
     'get_task_activity',
     'get_workspace_hierarchy',
@@ -131,14 +133,25 @@ test('a native tool reports a missing taskId instead of calling ClickUp', async 
     [
       { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_task_tree', arguments: {} } },
       { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'get_task_activity', arguments: {} } },
+      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_task', arguments: {} } },
     ],
-    { expected: 2 },
+    { expected: 3 },
   );
 
   for (const reply of replies) {
     assert.equal(reply.result.isError, true);
     assert.match(reply.result.content[0].text, /taskId is required/);
   }
+});
+
+test('get_list_statuses reports a missing listId instead of calling ClickUp', async () => {
+  const { replies } = await talk(
+    [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_list_statuses', arguments: {} } }],
+    { expected: 1 },
+  );
+
+  assert.equal(replies[0].result.isError, true);
+  assert.match(replies[0].result.content[0].text, /listId is required/);
 });
 
 test('a native tool call with no arguments at all is answered, not dropped', async () => {
